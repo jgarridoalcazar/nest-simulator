@@ -133,6 +133,7 @@ nest::Scheduler::init_()
 {
   assert( initialized_ == false );
 
+  simulating_ = false;
   simulated_ = false;
 
   // The following line is executed by all processes, no need to communicate
