@@ -22,17 +22,23 @@
 
 #include "iaf_psc_exp_ps.h"
 
-#include "exceptions.h"
-#include "network.h"
-#include "dict.h"
-#include "integerdatum.h"
-#include "doubledatum.h"
-#include "dictutils.h"
+// C++ includes:
+#include <limits>
+
+// Includes from libnestutil:
 #include "numerics.h"
-#include "universal_data_logger_impl.h"
 #include "propagator_stability.h"
 
-#include <limits>
+// Includes from nestkernel:
+#include "exceptions.h"
+#include "kernel_manager.h"
+#include "universal_data_logger_impl.h"
+
+// Includes from sli:
+#include "dict.h"
+#include "dictutils.h"
+#include "doubledatum.h"
+#include "integerdatum.h"
 
 /* ----------------------------------------------------------------
  * Recordables map
@@ -247,7 +253,7 @@ void
 nest::iaf_psc_exp_ps::update( const Time& origin, const long_t from, const long_t to )
 {
   assert( to >= 0 );
-  assert( static_cast< delay >( from ) < Scheduler::get_min_delay() );
+  assert( static_cast< delay >( from ) < kernel().connection_builder_manager.get_min_delay() );
   assert( from < to );
 
   // at start of slice, tell input queue to prepare for delivery
@@ -384,7 +390,8 @@ nest::iaf_psc_exp_ps::handle( SpikeEvent& e )
   */
   const long_t Tdeliver = e.get_stamp().get_steps() + e.get_delay() - 1;
 
-  B_.events_.add_spike( e.get_rel_delivery_steps( network()->get_slice_origin() ),
+  B_.events_.add_spike(
+    e.get_rel_delivery_steps( nest::kernel().simulation_manager.get_slice_origin() ),
     Tdeliver,
     e.get_offset(),
     e.get_weight() * e.get_multiplicity() );
@@ -399,7 +406,8 @@ nest::iaf_psc_exp_ps::handle( CurrentEvent& e )
   const double_t w = e.get_weight();
 
   // add weighted current; HEP 2002-10-04
-  B_.currents_.add_value( e.get_rel_delivery_steps( network()->get_slice_origin() ), w * c );
+  B_.currents_.add_value(
+    e.get_rel_delivery_steps( nest::kernel().simulation_manager.get_slice_origin() ), w * c );
 }
 
 void
@@ -442,10 +450,8 @@ nest::iaf_psc_exp_ps::emit_spike_( const Time& origin,
   // we know that the potential is subthreshold at t0, super at t0+dt
 
   // compute spike time relative to beginning of step
-  const double_t spike_offset = V_.h_ms_ - ( t0 + bisectioning_( dt ) );
-
   S_.last_spike_step_ = origin.get_steps() + lag + 1;
-  S_.last_spike_offset_ = spike_offset;
+  S_.last_spike_offset_ = V_.h_ms_ - ( t0 + bisectioning_( dt ) );
 
   // reset neuron and make it refractory
   S_.y2_ = P_.U_reset_;
@@ -455,8 +461,8 @@ nest::iaf_psc_exp_ps::emit_spike_( const Time& origin,
   set_spiketime( Time::step( S_.last_spike_step_ ), S_.last_spike_offset_ );
   SpikeEvent se;
 
-  se.set_offset( spike_offset );
-  network()->send( *this, se, lag );
+  se.set_offset( S_.last_spike_offset_ );
+  kernel().event_delivery_manager.send( *this, se, lag );
 }
 
 void
@@ -479,7 +485,7 @@ nest::iaf_psc_exp_ps::emit_instant_spike_( const Time& origin,
   SpikeEvent se;
 
   se.set_offset( S_.last_spike_offset_ );
-  network()->send( *this, se, lag );
+  kernel().event_delivery_manager.send( *this, se, lag );
 }
 
 nest::double_t
